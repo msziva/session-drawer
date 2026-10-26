@@ -19,6 +19,12 @@ while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
   pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
 done
 
+# Stay quiet when this session's tab is in front: you are already looking at it.
+if [ -n "$tty" ] && [ "$TERM_PROGRAM" = "Apple_Terminal" ]; then
+  front_tty=$(osascript -e 'tell application "Terminal" to if frontmost then tty of selected tab of front window' 2>/dev/null)
+  [ "$front_tty" = "$tty" ] && exit 0
+fi
+
 label=""
 prompt=""
 if [ -n "$transcript" ] && [ -f "$transcript" ]; then

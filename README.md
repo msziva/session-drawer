@@ -7,7 +7,8 @@ When you run several Claude Code sessions in parallel, this tells you which one 
 - **Notifies on:** a finished turn (`Stop`), and a permission prompt or question that needs your answer (`Notification`)
 - **Shows:** the session name, plus the start of your last prompt. The name comes from `/rename` if you set one. Otherwise it is the session topic from the Terminal tab title, and if that is missing, the project folder.
 - **Click:** brings Terminal.app to the front and selects that session's tab. The tab is matched by tty.
-- **One per session:** a newer notification from a session replaces its older one, so they don't pile up
+- **One per session:** each session gets its own notification. A newer notification from a session replaces its older one, so they don't pile up.
+- **Quiet when in front:** if that session's tab is the selected tab of the frontmost Terminal window, nothing is shown, because you are already looking at it.
 - **No dependencies:** a ~100-line Swift app using the native `UserNotifications` API, with its own entry in System Settings → Notifications. It does not use `terminal-notifier` or `osascript`.
 
 ## Requirements
