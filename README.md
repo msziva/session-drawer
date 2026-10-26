@@ -37,10 +37,16 @@ It backs up `settings.json` before changing it, keeps your existing hooks, and y
 After that:
 
 1. Restart running Claude Code sessions, or open `/hooks` once in each.
-2. **The first notification:** allow notifications for *Term Tab Notify*. Set the style to *Alerts* in System Settings if you want notifications to stay until clicked.
+2. **The first notification:** allow notifications for *Term Tab Notify*.
 3. **The first click:** allow *Term Tab Notify* to control Terminal. Tab switching needs this.
 
 Tip: name your sessions with `/rename <name>`. The name shows in both the tab title and the notification.
+
+### Keep notifications on screen
+
+By default macOS shows notifications as *Banners*, which disappear after about 5 seconds. You can't change that duration. To keep them on screen until you click or dismiss them, open **System Settings → Notifications → Term Tab Notify** and set the style to **Alerts**.
+
+This works well with term-tab-notify because each session has at most one notification, so only the sessions that are done or waiting stay on screen. Notifications that have already disappeared are still in Notification Center.
 
 ## Uninstall
 
