@@ -5,7 +5,7 @@ macOS notifications for [Claude Code](https://claude.com/claude-code) sessions r
 When you run several Claude Code sessions in parallel, this tells you which one has finished or is waiting for you, and takes you there in one click.
 
 - **Notifies on:** a finished turn (`Stop`), and a permission prompt or question that needs your answer (`Notification`)
-- **Shows:** the session name (from `/rename`) or the project folder, plus the start of your last prompt
+- **Shows:** the session name, plus the start of your last prompt. The name comes from `/rename` if you set one. Otherwise it is the session topic from the Terminal tab title, and if that is missing, the project folder.
 - **Click:** brings Terminal.app to the front and selects that session's tab. The tab is matched by tty.
 - **One per session:** a newer notification from a session replaces its older one, so they don't pile up
 - **No dependencies:** a ~100-line Swift app using the native `UserNotifications` API, with its own entry in System Settings → Notifications. It does not use `terminal-notifier` or `osascript`.
