@@ -10,14 +10,28 @@ transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 message=$(printf '%s' "$input" | jq -r '.message // empty')
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 
-# Walk up the process tree to the first ancestor with a controlling tty (the claude process).
+# Walk up the process tree to the first ancestor with a controlling tty (the claude process),
+# remembering our own ancestors so they are not mistaken for background tasks below.
 tty=""
+claude_pid=""
+ancestors=" $$ "
 pid=$PPID
 while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
   t=$(ps -o tty= -p "$pid" | tr -d ' ')
-  if [ -n "$t" ] && [ "$t" != "??" ]; then tty="/dev/$t"; break; fi
+  if [ -n "$t" ] && [ "$t" != "??" ]; then tty="/dev/$t"; claude_pid=$pid; break; fi
+  ancestors="$ancestors$pid "
   pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
 done
+
+# A finished turn while background tasks (run_in_background commands, monitors) are still
+# running is just a progress update: wait for the turn that comes after they are done.
+# Claude Code runs each tool command in a shell sourced from ~/.claude/shell-snapshots.
+if [ "$event" = "Stop" ] && [ -n "$claude_pid" ] && [ -z "$TERM_TAB_NOTIFY_EVERY_TURN" ]; then
+  background=$(ps -A -o pid=,ppid=,command= \
+    | awk -v parent="$claude_pid" -v skip="$ancestors" \
+        '$2 == parent && /shell-snapshots/ && index(skip, " " $1 " ") == 0' | wc -l | tr -d ' ')
+  [ "$background" -gt 0 ] && exit 0
+fi
 
 # Stay quiet when this session's tab is in front: you are already looking at it.
 if [ -n "$tty" ] && [ "$TERM_PROGRAM" = "Apple_Terminal" ]; then
