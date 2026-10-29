@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>io.github.msziva.term-tab-notify</string>
+    <string>io.github.msziva.session-drawer</string>
     <key>CFBundleName</key>
-    <string>Term Tab Notify</string>
+    <string>Session Drawer</string>
     <key>CFBundleDisplayName</key>
-    <string>Term Tab Notify</string>
+    <string>Session Drawer</string>
     <key>CFBundleExecutable</key>
-    <string>TermTabNotify</string>
+    <string>SessionDrawer</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
@@ -21,6 +21,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Term Tab Notify switches to the Terminal tab of the session you clicked.</string>
+    <string>Session Drawer switches to the Terminal tab of the session you clicked.</string>
 </dict>
 </plist>

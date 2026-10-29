@@ -1,20 +1,22 @@
-// term-tab-notify: posts a macOS notification for a Claude Code session and, when the
-// notification is clicked, brings the Terminal.app tab with the session's tty to front.
+// session-drawer: notifications and a menu bar session list for Claude Code sessions in
+// Terminal.app. Clicking a notification or a listed session brings its tab to front.
 //
-// Usage: TermTabNotify --title T --body B --id SESSION_ID --tty /dev/ttysNNN
-// Launched without arguments (e.g. by a notification click) it only handles the click.
+// Usage: SessionDrawer --title T --body B --id SESSION_ID --tty /dev/ttysNNN
+//   posts one notification and quits (this is what the hook runs).
+// Launched without arguments (at login, or by a notification click) it stays in the menu bar.
 import AppKit
 import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     let center = UNUserNotificationCenter.current()
+    var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         center.delegate = self
         let args = parseArgs()
         guard let title = args["title"] else {
-            // Click-launch: the delegate callback arrives shortly; quit if nothing comes.
-            quit(after: 5)
+            NSApp.setActivationPolicy(.accessory)
+            menuBar = MenuBarController()
             return
         }
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
@@ -43,33 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let tty = response.notification.request.content.userInfo["tty"] as? String ?? ""
-        focusTerminalTab(tty: tty)
-        completionHandler()
-        quit(after: 0.5)
-    }
-
-    func focusTerminalTab(tty: String) {
-        let source: String
-        if tty.isEmpty {
-            source = "tell application \"Terminal\" to activate"
-        } else {
-            source = """
-            tell application "Terminal"
-                activate
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        if tty of t is "\(tty)" then
-                            set selected of t to true
-                            set index of w to 1
-                            return
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            """
+        DispatchQueue.main.async {
+            Terminal.focusTab(tty: tty)
+            self.menuBar?.markSeen(tty: tty)
         }
-        var error: NSDictionary?
-        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        completionHandler()
     }
 
     func parseArgs() -> [String: String] {
