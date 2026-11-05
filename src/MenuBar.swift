@@ -8,6 +8,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private var timer: Timer?
+    private var watcher: TerminalWatcher?
     /// Sessions that needed you at the last update, to spot the ones that no longer do.
     private var attentionIDs: Set<String> = []
 
@@ -19,6 +20,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+        // Switching to a finished session's tab yourself also counts as seeing it.
+        watcher = TerminalWatcher(
+            isWanted: { [weak self] in
+                guard let store = self?.store else { return false }
+                return store.sessions.contains { $0.status == "done" && store.needsAttention($0) }
+            },
+            onFrontTab: { [weak self] tty in self?.markSeen(tty: tty) })
     }
 
     func markSeen(tty: String) {

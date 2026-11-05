@@ -10,27 +10,48 @@ enum Terminal {
 
     /// Brings Terminal.app to front with the tab whose tty matches selected.
     static func focusTab(tty: String) {
-        if !tty.isEmpty {
-            run("""
-            tell application "Terminal"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        if tty of t is "\(tty)" then
-                            set selected of t to true
-                            set index of w to 1
-                            return
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            """)
-        }
+        raise(tty: tty)
         activate()
-        // A notification click also activates this app, and that can land after the line above
-        // and take the focus back. Check once more when it has settled.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if !isFrontmost { activate() }
+        // Activation can bring back the window that was key before, undoing the raise above
+        // (seen with windows on several displays), and a notification click also activates this
+        // app, which can take the focus back. Redo both once things have settled.
+        for delay in [0.2, 0.6] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if !isFrontmost { activate() }
+                if !tty.isEmpty, frontTTY() != tty { raise(tty: tty) }
+            }
         }
+    }
+
+    /// Selects the tab with this tty and makes its window Terminal's front window.
+    private static func raise(tty: String) {
+        guard !tty.isEmpty else { return }
+        // `w` is a positional reference ("window 3"): once the window moves to the front it points
+        // at another window, so take the window by its id first.
+        run("""
+        tell application "Terminal"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if tty of t is "\(tty)" then
+                        set target to window id (id of w)
+                        set selected of t to true
+                        set index of target to 1
+                        try
+                            set frontmost of target to true
+                        end try
+                        return
+                    end if
+                end repeat
+            end repeat
+        end tell
+        """)
+    }
+
+    /// tty of the selected tab in Terminal's front window.
+    static func frontTTY() -> String? {
+        guard isRunning else { return nil }
+        let tty = run("tell application \"Terminal\" to return tty of selected tab of front window")
+        return tty?.isEmpty == false ? tty : nil
     }
 
     static var isFrontmost: Bool {

@@ -22,7 +22,7 @@ The app also lives in the menu bar and lists your Claude Code sessions. The icon
 - **States:** ⏳ waiting for you, ✅ done and not looked at yet, ◐ working, ✔︎ done and seen, ✳ ready, ⚪ ended (greyed out, listed for 7 days).
 - **Order:** at the top, the sessions active today, plus any session waiting for you or working: waiting first, then unseen finished ones, then the rest by last activity. Older sessions sit in groups by last activity that start collapsed and open in place with a click (*Yesterday*, *Earlier this week*, *Older*), and ended ones under *Closed*. Empty groups are hidden. Using a session again moves it back to the top.
 - **Click a row:** brings its Terminal tab to front.
-- **Seen:** a finished session counts as seen when you click its row or its notification, when its tab was already in front as it finished, or once you send it a new prompt. The app does not poll Terminal for the front tab.
+- **Seen:** a finished session counts as seen when you click its row or its notification, switch to its tab yourself, its tab was already in front as it finished, or once you send it a new prompt. Tab switches are picked up from Accessibility events (switching tabs changes the window title), so the app does not poll Terminal. Without the Accessibility permission it only notices when you switch to Terminal from another app.
 - **Notifications clean up:** once a session no longer needs you (seen, or answered in Terminal), its notification is removed from the screen and from Notification Center.
 - **Several accounts:** sessions run with a different `HOME` (e.g. a second Claude Code account) are tagged with that account's folder name. Point their state folder at the shared one, see *How it works*.
 - **No AI involved:** everything comes from hook events and the session transcript.
@@ -55,6 +55,7 @@ After that:
 1. Restart running Claude Code sessions, or open `/hooks` once in each.
 2. **The first notification:** allow notifications for *Session Drawer*.
 3. **The first click:** allow *Session Drawer* to control Terminal. Tab switching needs this.
+4. **Accessibility:** allow *Session Drawer* in System Settings → Privacy & Security → Accessibility, so switching to a tab yourself marks its session as seen. The app is signed ad-hoc, so after a rebuild remove it from the list and add it again.
 
 Tip: name your sessions with `/rename <name>`. The name shows in both the tab title and the notification.
 
