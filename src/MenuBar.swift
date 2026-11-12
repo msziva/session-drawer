@@ -9,13 +9,26 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private var timer: Timer?
     private var watcher: TerminalWatcher?
+    private let search = SearchFieldView()
+    /// Separator above "Quit": session rows go between the search field and this.
+    private var footer: NSMenuItem?
+    private var tabTitles: [String: String] = [:]
+    /// Sessions matching the current search, in list order.
+    private var matches: [Session] = []
+    /// The app that was active when the menu opened, and whether a session was opened from it.
+    private var previousApp: NSRunningApplication?
+    private var openedSession = false
     /// Sessions that needed you at the last update, to spot the ones that no longer do.
     private var attentionIDs: Set<String> = []
 
     override init() {
         super.init()
         menu.delegate = self
-        statusItem.menu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
+        search.onChange = { [weak self] query in self?.fill(query: query) }
+        search.onSubmit = { [weak self] in self?.openFirstMatch() }
+        search.onCancel = { [weak self] in self?.menu.cancelTracking() }
         refresh()
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common)
@@ -71,55 +84,143 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         store.reload()
         updateButton()
         menu.removeAllItems()
+        tabTitles = Terminal.tabTitles()
 
-        let header = NSMenuItem(title: "Claude Code sessions", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
+        let searchItem = NSMenuItem()
+        searchItem.view = search
+        search.clear()
+        menu.addItem(searchItem)
 
-        let titles = Terminal.tabTitles()
-        let groups = group(store.sessions)
+        footer = NSMenuItem.separator()
+        menu.addItem(footer!)
+        menu.addItem(NSMenuItem(title: "Quit Session Drawer",
+                                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        fill(query: "")
 
-        if groups.current.isEmpty {
-            let empty = NSMenuItem(title: "No active sessions today", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
+        // Size the menu for every session row, collapsed or filtered out, so opening a group or
+        // searching does not widen it (a wider menu gets moved left on screen).
+        let widest = store.sessions.compactMap { item(for: $0).attributedTitle?.size().width }.max() ?? 0
+        menu.minimumWidth = max(widest + 40, 300)
+    }
+
+    /// A text field in a menu only takes typing while its app is active, but a menu bar menu
+    /// opens without activating it, and activating while it is open closes it. So activate
+    /// first and open the menu once that is done. The app that was active gets the focus back.
+    @objc private func statusItemClicked() {
+        let front = NSWorkspace.shared.frontmostApplication
+        previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+        if NSApp.isActive { showMenu(); return }
+        var shown = false
+        var observer: NSObjectProtocol?
+        let show = { [weak self] in
+            guard !shown else { return }
+            shown = true
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            self?.showMenu()
         }
-        for session in groups.current {
-            menu.addItem(item(for: session, tabTitle: session.tty.flatMap { titles[$0] }))
-        }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in show() }
+        NSApp.activate(ignoringOtherApps: true)
+        // Open it anyway if the activation does not come through.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { show() }
+    }
 
-        // Earlier sessions sit in groups that start collapsed and open in place;
-        // using a session again moves it back to the top.
-        let collapsed = groups.collapsed.filter { !$0.sessions.isEmpty }
-        var hiddenItems: [NSMenuItem] = []
-        if !collapsed.isEmpty { menu.addItem(.separator()) }
-        for (title, sessions) in collapsed {
-            let header = NSMenuItem()
-            let view = GroupHeaderView(title: title, count: sessions.count)
-            header.view = view
-            menu.addItem(header)
-            let items = sessions.map { item(for: $0, tabTitle: $0.tty.flatMap { titles[$0] }) }
-            hiddenItems += items
-            view.onToggle = { [unowned view, weak menu, weak header] in
-                guard let menu, let header else { return }
-                if view.isExpanded {
-                    for (offset, item) in items.enumerated() {
-                        menu.insertItem(item, at: menu.index(of: header) + 1 + offset)
+    private func showMenu() {
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        openedSession = false
+        // The menu runs its own event loop while open; focus the field from inside it.
+        RunLoop.main.perform(inModes: [.eventTracking, .default]) { [search] in
+            search.focus()
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        // The chosen row's action runs after this; let it go first.
+        DispatchQueue.main.async { [self] in
+            guard !openedSession, let previousApp else { return }
+            if #available(macOS 14.0, *) { NSApp.yieldActivation(to: previousApp) }
+            previousApp.activate()
+        }
+    }
+
+    /// Replaces the rows between the search field and the footer: the grouped list when the
+    /// query is empty, otherwise every session that matches it.
+    private func fill(query: String) {
+        guard let footer else { return }
+        while menu.items.count > 1, menu.items[1] !== footer { menu.removeItem(at: 1) }
+        var rows: [NSMenuItem] = []
+        let words = normalize(query).split(separator: " ").map(String.init)
+
+        if !words.isEmpty {
+            matches = store.sessions.filter { session in
+                let text = normalize(searchText(session))
+                return words.allSatisfy { text.contains($0) }
+            }
+            rows = matches.map(item(for:))
+            if rows.isEmpty { rows = [disabled("No matching sessions")] }
+        } else {
+            matches = []
+            let groups = group(store.sessions)
+            rows = groups.current.isEmpty ? [disabled("No active sessions today")] : groups.current.map(item(for:))
+
+            // Earlier sessions sit in groups that start collapsed and open in place;
+            // using a session again moves it back to the top.
+            let collapsed = groups.collapsed.filter { !$0.sessions.isEmpty }
+            if !collapsed.isEmpty { rows.append(.separator()) }
+            for (title, sessions) in collapsed {
+                let header = NSMenuItem()
+                let view = GroupHeaderView(title: title, count: sessions.count)
+                header.view = view
+                rows.append(header)
+                let items = sessions.map(item(for:))
+                view.onToggle = { [unowned view, weak menu, weak header] in
+                    guard let menu, let header else { return }
+                    if view.isExpanded {
+                        for (offset, item) in items.enumerated() {
+                            menu.insertItem(item, at: menu.index(of: header) + 1 + offset)
+                        }
+                    } else {
+                        for item in items where item.menu != nil { menu.removeItem(item) }
                     }
-                } else {
-                    for item in items where item.menu != nil { menu.removeItem(item) }
                 }
             }
         }
+        for (offset, row) in rows.enumerated() { menu.insertItem(row, at: 1 + offset) }
+    }
 
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Session Drawer",
-                                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    /// Opens the first match (Return in the search field).
+    private func openFirstMatch() {
+        guard let session = matches.first(where: { !$0.isEnded }) else { return }
+        openedSession = true
+        menu.cancelTracking()
+        Terminal.focusTab(tty: session.tty ?? "")
+        markSeen(tty: session.tty ?? "")
+    }
 
-        // Size the menu for the collapsed rows too, so opening a group does not widen it
-        // (a wider menu gets moved left on screen).
-        let widest = (menu.items + hiddenItems).compactMap { $0.attributedTitle?.size().width }.max() ?? 0
-        menu.minimumWidth = widest + 40
+    private func searchText(_ session: Session) -> String {
+        [session.label, tabTitle(session), session.cwd, session.account,
+         session.lastPrompt, session.lastAnswer, session.message]
+            .compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// Case and accent insensitive, so "fozes" finds "Főzés".
+    private func normalize(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    private func tabTitle(_ session: Session) -> String? {
+        session.tty.flatMap { tabTitles[$0] }
+    }
+
+    private func disabled(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
     }
 
     /// Top of the menu: active today, waiting for you or working, however old.
@@ -152,7 +253,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                           ("Older", older), ("Closed", closed)])
     }
 
-    private func item(for session: Session, tabTitle: String?) -> NSMenuItem {
+    private func item(for session: Session) -> NSMenuItem {
+        let tabTitle = tabTitle(session)
         let item = NSMenuItem(title: "", action: #selector(open(_:)), keyEquivalent: "")
         item.target = self
         item.representedObject = session.tty ?? ""
@@ -208,6 +310,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func open(_ sender: NSMenuItem) {
         let tty = sender.representedObject as? String ?? ""
+        openedSession = true
         Terminal.focusTab(tty: tty)
         markSeen(tty: tty)
     }
@@ -274,5 +377,60 @@ final class GroupHeaderView: NSView {
 
     private func updateLabel() {
         label.stringValue = "\(isExpanded ? "▾" : "▸")  \(title)  (\(count))"
+    }
+}
+
+/// Search field at the top of the menu. Typing filters the session rows, Return opens the first
+/// match, Escape clears the field (or closes the menu when it is empty).
+final class SearchFieldView: NSView, NSSearchFieldDelegate {
+    var onChange: ((String) -> Void)?
+    var onSubmit: (() -> Void)?
+    var onCancel: (() -> Void)?
+    private let field = NSSearchField()
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        autoresizingMask = [.width]
+        field.frame = NSRect(x: 12, y: 5, width: 276, height: 22)
+        field.autoresizingMask = [.width]
+        field.placeholderString = "Search sessions"
+        field.sendsSearchStringImmediately = true
+        field.delegate = self
+        // The clear (x) button only sends the action, not a text change.
+        field.target = self
+        field.action = #selector(searchChanged)
+        addSubview(field)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func clear() { field.stringValue = "" }
+
+    func focus() { window?.makeFirstResponder(field) }
+
+    func controlTextDidChange(_ notification: Notification) {
+        onChange?(field.stringValue)
+    }
+
+    @objc private func searchChanged() {
+        onChange?(field.stringValue)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)):
+            onSubmit?()
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            if field.stringValue.isEmpty {
+                onCancel?()
+            } else {
+                clear()
+                onChange?("")
+            }
+            return true
+        default:
+            return false
+        }
     }
 }
