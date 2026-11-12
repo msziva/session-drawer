@@ -24,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = args["body"] ?? ""
-            content.userInfo = ["tty": args["tty"] ?? ""]
+            content.userInfo = ["tty": args["tty"] ?? "", "id": args["id"] ?? "",
+                                "entrypoint": args["entrypoint"] ?? ""]
             // Same identifier per session: a newer notification replaces the older one.
             let request = UNNotificationRequest(
                 identifier: "session-" + (args["id"] ?? UUID().uuidString),
@@ -44,10 +45,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        let tty = response.notification.request.content.userInfo["tty"] as? String ?? ""
+        let info = response.notification.request.content.userInfo
+        let tty = info["tty"] as? String ?? ""
+        let id = info["id"] as? String ?? ""
+        let isDesktop = info["entrypoint"] as? String == "claude-desktop"
         DispatchQueue.main.async {
-            Terminal.focusTab(tty: tty)
-            self.menuBar?.markSeen(tty: tty)
+            Session.focus(sessionId: id, tty: tty, isDesktop: isDesktop)
+            if tty.isEmpty {
+                self.menuBar?.markSeen(sessionId: id)
+            } else {
+                self.menuBar?.markSeen(tty: tty)
+            }
         }
         completionHandler()
     }

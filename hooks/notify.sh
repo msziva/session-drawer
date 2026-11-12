@@ -66,6 +66,15 @@ if [ -n "$tty" ] && [ "$TERM_PROGRAM" = "Apple_Terminal" ] \
   front_tty=$(osascript -e 'tell application "Terminal" to if frontmost then tty of selected tab of front window' 2>/dev/null)
   [ "$front_tty" = "$tty" ] && front=true
 fi
+# A Claude Desktop session is in front when Claude is and it is the session last focused there.
+desktop=false
+[ "$CLAUDE_CODE_ENTRYPOINT" = "claude-desktop" ] && desktop=true
+if [ "$desktop" = true ] && { [ "$event" = "Stop" ] || [ "$event" = "Notification" ]; } \
+   && lsappinfo info -only bundleid "$(lsappinfo front)" | grep -q '"com.anthropic.claudefordesktop"'; then
+  focused=$(cat "$HOME/Library/Application Support/Claude/claude-code-sessions"/*/*/local_*.json 2>/dev/null \
+    | jq -rs 'max_by(.lastFocusedAt // 0) | .cliSessionId // empty' 2>/dev/null)
+  [ "$focused" = "$session_id" ] && front=true
+fi
 
 label=""
 prompt="$submitted"
@@ -99,7 +108,7 @@ if [ -n "$status" ]; then
   write_state \
     --arg session_id "$session_id" --arg event "$event" --arg status "$status" \
     --arg home "$HOME" --arg cwd "$cwd" --arg transcript "$transcript" \
-    --arg tty "$tty" --arg pid "$claude_pid" \
+    --arg tty "$tty" --arg pid "$claude_pid" --arg entrypoint "$CLAUDE_CODE_ENTRYPOINT" \
     --arg label "$label" --arg prompt "$prompt" --arg answer "$answer" --arg message "$message" \
     --argjson now "$now" --argjson front "$front" '
     def nonempty: if . == "" then null else . end;
@@ -108,8 +117,9 @@ if [ -n "$status" ]; then
       home: $home,
       cwd: (($cwd | nonempty) // .cwd),
       transcript: (($transcript | nonempty) // .transcript),
-      tty: (($tty | nonempty) // .tty),
-      pid: (($pid | tonumber?) // .pid),
+      tty: (if $entrypoint == "claude-desktop" then null else ($tty | nonempty) // .tty end),
+      pid: (if $entrypoint == "claude-desktop" then null else ($pid | tonumber?) // .pid end),
+      entrypoint: (($entrypoint | nonempty) // .entrypoint),
       started_at: (.started_at // $now),
       updated_at: $now,
       status: $status,
@@ -131,6 +141,9 @@ fi
 [ "$event" = "Stop" ] && [ "$background" -gt 0 ] && [ -z "$SESSION_DRAWER_EVERY_TURN" ] && exit 0
 # Stay quiet when this session's tab is in front: you are already looking at it.
 [ "$front" = true ] && exit 0
+# Claude Desktop shows its own banner when one of its sessions waits for you. A finished turn it
+# only files in Notification Center (a passive notification, no banner), so that one is ours.
+[ "$desktop" = true ] && [ "$event" = "Notification" ] && [ -z "$SESSION_DRAWER_DESKTOP_NOTIFY" ] && exit 0
 
 # No /rename: use the Terminal.app tab title (Claude Code sets it to the session topic),
 # minus the leading status glyph (✳ idle, ◐ working, ...).
@@ -160,6 +173,7 @@ snippet=$(printf '%s' "$prompt" | cut -c 1-90)
 
 # Detached so a first-run permission prompt is not killed by the hook timeout.
 nohup "$HOME/Applications/SessionDrawer.app/Contents/MacOS/SessionDrawer" \
-  --title "Claude · $label" --body "$body" --id "$session_id" --tty "$tty" >/dev/null 2>&1 &
+  --title "Claude · $label" --body "$body" --id "$session_id" --tty "$tty" \
+  --entrypoint "$CLAUDE_CODE_ENTRYPOINT" >/dev/null 2>&1 &
 nohup afplay "/System/Library/Sounds/$sound.aiff" >/dev/null 2>&1 &
 exit 0

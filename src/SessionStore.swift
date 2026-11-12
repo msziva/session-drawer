@@ -17,13 +17,30 @@ struct Session: Decodable {
     let lastAnswer: String?
     let message: String?
     let seen: Bool?
+    /// "cli" or "claude-desktop" (the Code tab of Claude Desktop); nil in older state files.
+    let entrypoint: String?
 
     /// Set by the store: the claude process is gone or SessionEnd arrived.
     var isEnded = false
 
     enum CodingKeys: String, CodingKey {
         case sessionId, home, cwd, transcript, tty, pid, startedAt, updatedAt, status
-        case label, lastPrompt, lastAnswer, message, seen
+        case label, lastPrompt, lastAnswer, message, seen, entrypoint
+    }
+
+    var isDesktop: Bool { entrypoint == "claude-desktop" }
+
+    /// Brings the session to front: its Terminal tab, or without one, its Claude Desktop session.
+    func focus() {
+        Self.focus(sessionId: sessionId, tty: tty ?? "", isDesktop: isDesktop)
+    }
+
+    static func focus(sessionId: String, tty: String, isDesktop: Bool) {
+        if !tty.isEmpty {
+            Terminal.focusTab(tty: tty)
+        } else if !ClaudeDesktop.focusSession(cliSessionId: sessionId), isDesktop {
+            ClaudeDesktop.activate()
+        }
     }
 
     var folder: String {

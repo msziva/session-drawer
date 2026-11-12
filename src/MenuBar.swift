@@ -50,6 +50,26 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         updateButton()
     }
 
+    /// For a session without a tab (Claude Desktop): many share the empty tty.
+    func markSeen(sessionId: String) {
+        store.reload()
+        for session in store.sessions where session.sessionId == sessionId {
+            store.markSeen(session)
+        }
+        updateButton()
+    }
+
+    /// Brings a session to front and counts it as seen.
+    private func openSession(_ session: Session) {
+        openedSession = true
+        session.focus()
+        if let tty = session.tty, !tty.isEmpty {
+            markSeen(tty: tty)
+        } else {
+            markSeen(sessionId: session.sessionId)
+        }
+    }
+
     private func refresh() {
         store.reload()
         updateButton()
@@ -196,10 +216,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Opens the first match (Return in the search field).
     private func openFirstMatch() {
         guard let session = matches.first(where: { !$0.isEnded }) else { return }
-        openedSession = true
         menu.cancelTracking()
-        Terminal.focusTab(tty: session.tty ?? "")
-        markSeen(tty: session.tty ?? "")
+        openSession(session)
     }
 
     private func searchText(_ session: Session) -> String {
@@ -257,7 +275,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let tabTitle = tabTitle(session)
         let item = NSMenuItem(title: "", action: #selector(open(_:)), keyEquivalent: "")
         item.target = self
-        item.representedObject = session.tty ?? ""
+        item.representedObject = session.sessionId
         item.isEnabled = !session.isEnded
 
         let name = session.label ?? tabTitle ?? session.folder
@@ -309,10 +327,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func open(_ sender: NSMenuItem) {
-        let tty = sender.representedObject as? String ?? ""
-        openedSession = true
-        Terminal.focusTab(tty: tty)
-        markSeen(tty: tty)
+        let id = sender.representedObject as? String ?? ""
+        guard let session = store.sessions.first(where: { $0.sessionId == id }) else { return }
+        openSession(session)
     }
 
     private func ago(_ timestamp: Double) -> String {
