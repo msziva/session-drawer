@@ -91,11 +91,26 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func dismissHandledNotifications() {
         let current = Set(store.sessions.filter(store.needsAttention).map(\.sessionId))
         let handled = attentionIDs.subtracting(current)
-        if !handled.isEmpty {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(
-                withIdentifiers: handled.map { "session-" + $0 })
-        }
+        let added = current.subtracting(attentionIDs)
         attentionIDs = current
+        if !handled.isEmpty {
+            removeNotifications(of: handled)
+            // The hook posts the notification a moment after it writes the state: one handled
+            // this fast may not be delivered yet, so remove it once more.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self else { return }
+                removeNotifications(of: handled.subtracting(attentionIDs))
+            }
+        }
+        // A session that finished just now may already have its tab in front: the tab switch
+        // came before this list knew there was something to mark.
+        if !added.isEmpty { watcher?.scheduleCheck(force: true) }
+    }
+
+    private func removeNotifications(of sessionIDs: Set<String>) {
+        guard !sessionIDs.isEmpty else { return }
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: sessionIDs.map { "session-" + $0 })
     }
 
     // MARK: NSMenuDelegate

@@ -100,14 +100,18 @@ final class TerminalWatcher {
     }
 
     /// Coalesces bursts of events into one check shortly after they settle.
-    private func scheduleCheck(force: Bool) {
+    /// `force` checks even if the front window's title is the one checked last.
+    func scheduleCheck(force: Bool) {
         if force { lastTitleKey = nil }
         guard !checkScheduled else { return }
         checkScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
             checkScheduled = false
-            guard Terminal.isFrontmost, isWanted() else { return }
+            guard Terminal.isFrontmost else { return }
+            // Tab switches are not followed while nothing is unseen, so the remembered title
+            // goes stale: coming back to that tab later would look like no change.
+            guard isWanted() else { lastTitleKey = nil; return }
             let key = frontTitleKey()
             if let key, key == lastTitleKey { return }
             lastTitleKey = key
