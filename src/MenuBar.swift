@@ -20,6 +20,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var openedSession = false
     /// Sessions that needed you at the last update, to spot the ones that no longer do.
     private var attentionIDs: Set<String> = []
+    /// Whether the status item got its fixed width yet.
+    private var lengthFixed = false
 
     override init() {
         super.init()
@@ -79,11 +81,41 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         dismissHandledNotifications()
         guard let button = statusItem.button else { return }
         let count = store.attentionCount
-        let symbol = count > 0 ? "bell.badge.fill" : "terminal"
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Claude sessions")
+        let description = "Claude sessions"
+        if !lengthFixed {
+            // Keep the natural width of the idle icon for good: a status item that changes
+            // width moves every icon to its left.
+            button.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: description)
+            if button.frame.width > 0 {
+                statusItem.length = button.frame.width
+                lengthFixed = true
+            }
+        }
+        let terminal = NSImage(systemSymbolName: "terminal", accessibilityDescription: description)
+        // The count goes inside the icon, so it takes no extra room.
+        button.image = count == 0 ? terminal : countImage(count, size: terminal?.size ?? NSSize(width: 19, height: 14))
         button.image?.isTemplate = true
-        button.title = count > 0 ? " \(count)" : ""
-        button.imagePosition = .imageLeading
+    }
+
+    /// The terminal icon with the count in it in place of the prompt.
+    private func countImage(_ count: Int, size: NSSize) -> NSImage {
+        let image = NSImage(size: size, flipped: false) { bounds in
+            // The screen of the "terminal" symbol.
+            let screen = NSRect(x: bounds.midX - 7.75, y: bounds.midY - 6, width: 15.5, height: 12)
+            NSColor.black.setStroke()
+            let outline = NSBezierPath(roundedRect: screen.insetBy(dx: 0.625, dy: 0.625), xRadius: 1.5, yRadius: 1.5)
+            outline.lineWidth = 1.25
+            outline.stroke()
+            let text = String(min(count, 99))
+            let font = NSFont.systemFont(ofSize: text.count > 1 ? 8.5 : 9.5, weight: .bold)
+            let string = NSAttributedString(string: text, attributes: [.font: font])
+            let textSize = string.size()
+            string.draw(at: NSPoint(x: bounds.midX - textSize.width / 2,
+                                    y: bounds.midY - textSize.height / 2))
+            return true
+        }
+        image.accessibilityDescription = "Claude sessions"
+        return image
     }
 
     /// Removes the notification of a session once it no longer needs you: you opened it from
