@@ -16,7 +16,7 @@ When you run several Claude Code sessions in parallel, this shows what each one 
 
 ## Menu bar session list
 
-The app also lives in the menu bar and lists your Claude Code sessions. The icon shows how many sessions need you (a bell with a count).
+The app also lives in the menu bar and lists your Claude Code sessions. The icon shows how many sessions need you (the count takes the place of the prompt in it).
 
 - **Each row:** the session name, its state and how long ago it changed, the folder, your last prompt (`›`) and the first line of Claude's last answer (`⤷`) or the question it is waiting on.
 - **States:** ⏳ waiting for you, ✅ done and not looked at yet, ◐ working, ✔︎ done and seen, ✳ ready, ⚪ ended (greyed out, listed for 7 days).
