@@ -56,7 +56,7 @@ After that:
 1. Restart running Claude Code sessions, or open `/hooks` once in each.
 2. **The first notification:** allow notifications for *Session Drawer*.
 3. **The first click:** allow *Session Drawer* to control Terminal. Tab switching needs this.
-4. **Accessibility:** allow *Session Drawer* in System Settings → Privacy & Security → Accessibility, so switching to a tab yourself marks its session as seen. The app is signed ad-hoc, so after a rebuild remove it from the list and add it again.
+4. **Accessibility:** allow *Session Drawer* in System Settings → Privacy & Security → Accessibility, so switching to a tab yourself marks its session as seen. `build.sh` signs the app with your own certificate when the keychain has one (Developer ID Application or Apple Development), and the permission then survives rebuilds. Without one the app is signed ad-hoc: after each rebuild remove it from the list and add it again.
 
 Tip: name your sessions with `/rename <name>`. The name shows in both the tab title and the notification.
 
