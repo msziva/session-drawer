@@ -35,11 +35,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-        // Switching to a finished session's tab yourself also counts as seeing it.
+        // Switching to a finished or waiting session's tab yourself also counts as seeing it.
         watcher = TerminalWatcher(
             isWanted: { [weak self] in
                 guard let store = self?.store else { return false }
-                return store.sessions.contains { $0.status == "done" && store.needsAttention($0) }
+                return store.sessions.contains(where: store.needsAttention)
             },
             onFrontTab: { [weak self] tty in self?.markSeen(tty: tty) })
     }
@@ -81,37 +81,70 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         dismissHandledNotifications()
         guard let button = statusItem.button else { return }
         let count = store.attentionCount
-        let description = "Claude sessions"
         if !lengthFixed {
             // Keep the natural width of the idle icon for good: a status item that changes
             // width moves every icon to its left.
-            button.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: description)
+            button.image = idleImage()
             if button.frame.width > 0 {
                 statusItem.length = button.frame.width
                 lengthFixed = true
             }
         }
-        let terminal = NSImage(systemSymbolName: "terminal", accessibilityDescription: description)
         // The count goes inside the icon, so it takes no extra room.
-        button.image = count == 0 ? terminal : countImage(count, size: terminal?.size ?? NSSize(width: 19, height: 14))
-        button.image?.isTemplate = true
+        // Orange when a session waits for an answer from you, green when they only finished.
+        let waiting = store.sessions.contains { $0.status == "waiting" && store.needsAttention($0) }
+        button.image = count == 0 ? idleImage() : countImage(count, color: waiting ? .systemOrange : .systemGreen)
+        // Idle, the icon follows the menu bar's colour; with a count it keeps its own.
+        button.image?.isTemplate = count == 0
     }
 
-    /// The terminal icon with the count in it in place of the prompt.
-    private func countImage(_ count: Int, size: NSSize) -> NSImage {
-        let image = NSImage(size: size, flipped: false) { bounds in
-            // The screen of the "terminal" symbol.
-            let screen = NSRect(x: bounds.midX - 7.75, y: bounds.midY - 6, width: 15.5, height: 12)
+    /// Both icons are this size: as tall as the icons around it in the menu bar (the
+    /// "terminal" system symbol is lower than those).
+    private static let iconSize = NSSize(width: 21, height: 17)
+
+    /// A terminal screen with a prompt in it.
+    private func idleImage() -> NSImage {
+        let image = NSImage(size: Self.iconSize, flipped: false) { bounds in
             NSColor.black.setStroke()
-            let outline = NSBezierPath(roundedRect: screen.insetBy(dx: 0.625, dy: 0.625), xRadius: 1.5, yRadius: 1.5)
-            outline.lineWidth = 1.25
+            let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75), xRadius: 3.5, yRadius: 3.5)
+            outline.lineWidth = 1.5
             outline.stroke()
+            let prompt = NSBezierPath()
+            prompt.move(to: NSPoint(x: 5.5, y: 11.5))
+            prompt.line(to: NSPoint(x: 9, y: 8.5))
+            prompt.line(to: NSPoint(x: 5.5, y: 5.5))
+            prompt.move(to: NSPoint(x: 10.5, y: 5.5))
+            prompt.line(to: NSPoint(x: 15, y: 5.5))
+            prompt.lineWidth = 1.5
+            prompt.lineCapStyle = .round
+            prompt.lineJoinStyle = .round
+            prompt.stroke()
+            return true
+        }
+        image.accessibilityDescription = "Claude sessions"
+        return image
+    }
+
+    /// The screen of the terminal icon filled with colour, the count in it in place of the
+    /// prompt: among the monochrome menu bar icons it is the one that stands out.
+    private func countImage(_ count: Int, color: NSColor) -> NSImage {
+        let image = NSImage(size: Self.iconSize, flipped: false) { bounds in
+            let screen = bounds
+            color.setFill()
+            NSBezierPath(roundedRect: screen, xRadius: 4, yRadius: 4).fill()
             let text = String(min(count, 99))
-            let font = NSFont.systemFont(ofSize: text.count > 1 ? 8.5 : 9.5, weight: .bold)
-            let string = NSAttributedString(string: text, attributes: [.font: font])
-            let textSize = string.size()
-            string.draw(at: NSPoint(x: bounds.midX - textSize.width / 2,
-                                    y: bounds.midY - textSize.height / 2))
+            let font = NSFont.systemFont(ofSize: text.count > 1 ? 11 : 12.5, weight: .heavy)
+            let string = NSAttributedString(string: text, attributes: [
+                .font: font,
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): NSColor.white.cgColor])
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            // Centre the drawn digits themselves: the line box has room for descenders the
+            // digits do not have, so centring that leaves them off the middle.
+            let line = CTLineCreateWithAttributedString(string)
+            context.textPosition = .zero
+            let ink = CTLineGetImageBounds(line, context)
+            context.textPosition = CGPoint(x: screen.midX - ink.midX, y: screen.midY - ink.midY)
+            CTLineDraw(line, context)
             return true
         }
         image.accessibilityDescription = "Claude sessions"

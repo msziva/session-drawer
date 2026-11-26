@@ -112,10 +112,12 @@ final class SessionStore {
         }
     }
 
-    /// Waiting for you, or finished while you were looking elsewhere.
+    /// Waiting for you or finished, while you were looking elsewhere. Looking at a waiting
+    /// session counts as answering it: no hook tells when you answer, and the state only
+    /// changes once the tool you allowed has finished.
     func needsAttention(_ session: Session) -> Bool {
         guard !session.isEnded else { return false }
-        return session.status == "waiting" || (session.status == "done" && !isSeen(session))
+        return (session.status == "waiting" || session.status == "done") && !isSeen(session)
     }
 
     var attentionCount: Int { sessions.filter(needsAttention).count }
